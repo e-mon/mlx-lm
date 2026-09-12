@@ -272,6 +272,17 @@ def _infer_thinking(tokenizer):
             )
 
     # Multi token thinking modes
+    if _is_llm_jp_harmony(tokenizer):
+        # The tokenizer decodes a space after every special token, so the
+        # generated text carries spaces the template does not; the token
+        # form used to find a prefilled reasoning in the prompt has none.
+        return (
+            "<|channel|> analysis<|message|> ",
+            "<|end|>",
+            tuple(tokenizer.encode("<|channel|>analysis<|message|>", add_special_tokens=False)),
+            (vocab["<|end|>"],),
+        )
+
     if "<|channel>" in vocab and "<channel|>" in vocab:
         think_start = "<|channel>thought"
         think_end = "<channel|>"
@@ -301,7 +312,25 @@ def _is_xtml_vocab(vocab):
     )
 
 
+def _is_llm_jp_harmony(tokenizer):
+    chat_template = tokenizer.chat_template
+    return isinstance(chat_template, str) and "chat_format=llm-jp-harmony-v1" in chat_template
+
+
 def _infer_structural_markers(tokenizer):
+    if _is_llm_jp_harmony(tokenizer):
+        # Message headers of the dialect. The trailing space of "<|message|> "
+        # is the tokenizer's dummy prefix, so an intentional leading space in
+        # a message body survives; an empty reasoning message is dropped as a
+        # whole, and a stray <|end|> after a commentary message is removed.
+        return (
+            "<|start|> assistant",
+            "<|channel|> final",
+            "<|channel|> commentary",
+            "<|message|> ",
+            "<|channel|> analysis<|message|><|end|>",
+            "<|end|>",
+        )
     if _is_xtml_vocab(tokenizer.get_vocab()):
         return (
             "<|open|>response<|sep|>",
@@ -603,6 +632,8 @@ def _infer_tool_parser(tokenizer):
         if _is_xtml_vocab(tokenizer.get_vocab()):
             return "kimi_k3"
         return None
+    elif "chat_format=llm-jp-harmony-v1" in chat_template:
+        return "llm_jp_harmony"
     elif "<minimax:tool_call>" in chat_template:
         return "minimax_m2"
     elif "<|tool_call>" in chat_template and "<tool_call|>" in chat_template:
